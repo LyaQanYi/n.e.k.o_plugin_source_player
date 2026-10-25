@@ -195,6 +195,10 @@
 | `objective` / `plan_steps` | 空 | 初始目标/计划，可被 `source_directive` 覆盖 |
 | `[source.keys]` | 空 | 逐动作覆盖键位，例如 `forward = "w"` |
 
+插件同时提供 `config.schema.json`：插件管理 →「配置」页会直接显示上面这些字段的
+中文名称、说明、取值范围和 `capture_backend` 的下拉选项，改完由 `config_change`
+生命周期热重载，不用重启。`config.example.toml` 是同一份默认值的可复制模板。
+
 **灵敏度校准**：默认值来自本机 `Half-Life/valve/config.cfg` 与
 `Portal 2/portal2/cfg/config.cfg`（sensitivity 3、m_yaw 0.022）。
 如果你关掉了“提高指针精确度”或改了灵敏度，转视角会过冲/不足；
@@ -207,7 +211,7 @@
 ```
 官方 CLI check --release --market-release        0 error / 0 warning，payload hash 校验通过
 官方 CLI 同参数 ruff（E4,E7,E9,F,I）            All checks passed
-插件内契约测试（Linux CI 可跑）                  8 tests passed
+插件内契约测试（Linux CI 可跑）                  10 tests passed
 打包器结构 + 排除规则 + payload hash          OK
 解包后按宿主路径导入 + startup                OK（6 entries / 12 tools）
 活体宿主机启动 + 只读工具                      selfcheck/games/status 全部成功

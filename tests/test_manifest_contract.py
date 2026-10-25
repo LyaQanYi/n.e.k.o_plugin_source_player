@@ -123,3 +123,39 @@ def test_no_requirements_txt() -> None:
     # dependencies must live in pyproject.toml and be vendored.
     assert not (ROOT / "requirements.txt").exists()
     assert not (ROOT / "vendor").exists() or (ROOT / "pyproject.toml").is_file()
+
+
+def test_config_schema_covers_every_manifest_key() -> None:
+    schema = json.loads((ROOT / "config.schema.json").read_text(encoding="utf-8"))
+    assert schema["type"] == "object"
+    source = schema["properties"]["source"]
+    assert source["type"] == "object"
+    schema_keys = set(source["properties"])
+    manifest_keys = set(_manifest()["source"])
+    assert schema_keys == manifest_keys, (
+        f"schema-only={sorted(schema_keys - manifest_keys)} "
+        f"manifest-only={sorted(manifest_keys - schema_keys)}"
+    )
+    for key, prop in source["properties"].items():
+        # Every field needs a human title; descriptions are strongly encouraged.
+        assert prop.get("title"), f"{key} has no title"
+        assert prop.get("type") in {"string", "number", "integer", "boolean", "object", "array"}, key
+
+
+def test_llm_tool_errors_use_the_documented_shape() -> None:
+    text = ENTRY.read_text(encoding="utf-8")
+    tree = ast.parse(text)
+    functions = {n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    assert {"_tool_error", "_ok_or_err"} <= functions
+
+    calls = {"_tool_error": 0, "_ok_or_err": 0}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in calls:
+            calls[node.func.id] += 1
+    assert calls["_tool_error"] >= 10, calls
+    assert calls["_ok_or_err"] >= 6, calls
+
+    # The helper must emit the exact shape main_server understands.
+    assert '"is_error": True' in text
+    assert '"error": code' in text
+

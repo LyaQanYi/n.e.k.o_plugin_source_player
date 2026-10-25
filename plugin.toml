@@ -38,9 +38,9 @@ enabled = true
 # playing.  The user (or the dialog LLM) calls source_play.
 auto_start = false
 
-[plugin.store]
-enabled = true
-
+# The plugin keeps no persistent key/value data, so [plugin.store] is omitted on
+# purpose: only declare capabilities the plugin actually uses.
+#
 # Entries carry @ui.action metadata for the Plugin Center's action list.  No
 # hosted TSX surface is shipped, so no compiled UI bundle is required.
 [plugin.ui]

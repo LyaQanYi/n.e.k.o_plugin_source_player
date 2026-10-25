@@ -275,6 +275,28 @@ SELFCHECK_DESCRIPTION = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Tool result helpers
+# ---------------------------------------------------------------------------
+
+def _tool_error(code: str, message: str) -> Dict[str, Any]:
+    """Return the documented LLM-tool error shape.
+
+    ``is_error`` tells the dialogue model the call failed, and ``error`` carries
+    a stable code instead of leaking raw exception text into the conversation.
+    """
+    return {"output": {"reason": message}, "is_error": True, "error": code}
+
+
+def _ok_or_err(result: Any) -> Any:
+    """Map a tool result to ``Ok``/``Err`` for ``@plugin_entry`` handlers."""
+    if isinstance(result, dict) and result.get("is_error"):
+        output = result.get("output")
+        reason = output.get("reason") if isinstance(output, dict) else None
+        return Err(SdkError(str(reason or result.get("error") or "tool failed")))
+    return Ok(result)
+
+
 @neko_plugin
 class SourcePlayerPlugin(NekoPluginBase):
     """Plugin facade: lifecycle + tool entries only."""
@@ -379,7 +401,7 @@ class SourcePlayerPlugin(NekoPluginBase):
     async def source_play_tool(self, *, game: Any = None, objective: Any = "", **_):
         started = await self._ensure_service_started()
         if not started:
-            return {"summary": "UNAVAILABLE: 插件服务起不来，看插件日志。"}
+            return _tool_error("UNAVAILABLE", "插件服务起不来，看插件日志。")
 
         installed = self._service.installed_ids()
         # Force a fresh running-game scan before the "no game name" fallback;
@@ -515,10 +537,10 @@ class SourcePlayerPlugin(NekoPluginBase):
               parameters=COMMAND_SCHEMA, timeout=20.0)
     async def source_command_tool(self, *, instruction: Any = None, seconds: Any = 0, **_):
         if not isinstance(instruction, str) or not instruction.strip():
-            return {"summary": "INVALID_ARGUMENT: source_command 需要一句具体操作，比如「往前走」「打」「按 E」。"}
+            return _tool_error("INVALID_ARGUMENT", "source_command 需要一句具体操作，比如「往前走」「打」「按 E」。")
         started = await self._ensure_service_started()
         if not started:
-            return {"summary": "UNAVAILABLE: 插件服务起不来，看插件日志。"}
+            return _tool_error("UNAVAILABLE", "插件服务起不来，看插件日志。")
         try:
             seconds_value = float(seconds) if seconds not in (None, "") else 0.0
         except (TypeError, ValueError):
@@ -531,7 +553,7 @@ class SourcePlayerPlugin(NekoPluginBase):
     async def source_look_tool(self, *, note: Any = "", **_):
         started = await self._ensure_service_started()
         if not started:
-            return {"summary": "UNAVAILABLE: 插件服务起不来，看插件日志。"}
+            return _tool_error("UNAVAILABLE", "插件服务起不来，看插件日志。")
         return self._service.look(note=str(note or ""))
 
     @llm_tool(name="source_aim", description=AIM_DESCRIPTION,
@@ -540,11 +562,11 @@ class SourcePlayerPlugin(NekoPluginBase):
                               fire: Any = False, button: Any = "left", **_):
         started = await self._ensure_service_started()
         if not started:
-            return {"summary": "UNAVAILABLE: 插件服务起不来。"}
+            return _tool_error("UNAVAILABLE", "插件服务起不来。")
         try:
             xf, yf = float(x), float(y)
         except (TypeError, ValueError):
-            return {"summary": "INVALID_ARGUMENT: x/y 需要是数字（0..1 或像素坐标）。"}
+            return _tool_error("INVALID_ARGUMENT", "x/y 需要是数字（0..1 或像素坐标）。")
         if not self._service.get_status().get("running"):
             return {"summary": "还没有正在运行的游戏窗口；先让主人打开游戏并 source_play。"}
         return self._service.aim(xf, yf, fire=bool(fire), button=str(button or "left"))
@@ -554,7 +576,7 @@ class SourcePlayerPlugin(NekoPluginBase):
     async def source_shoot_tool(self, *, portal: Any = "primary", **_):
         started = await self._ensure_service_started()
         if not started:
-            return {"summary": "UNAVAILABLE: 插件服务起不来。"}
+            return _tool_error("UNAVAILABLE", "插件服务起不来。")
         if not self._service.get_status().get("running"):
             return {"summary": "还没有正在运行的游戏窗口；先让主人打开游戏并 source_play。"}
         return self._service.shoot(str(portal or "primary"))
@@ -564,10 +586,10 @@ class SourcePlayerPlugin(NekoPluginBase):
     async def source_directive_tool(self, *, goal: Any = None, steps: Any = "",
                                     mode: Any = "explore", seconds: Any = 0, **_):
         if not isinstance(goal, str) or not goal.strip():
-            return {"summary": "INVALID_ARGUMENT: source_directive 需要一句目标，比如「找到出口」。"}
+            return _tool_error("INVALID_ARGUMENT", "source_directive 需要一句目标，比如「找到出口」。")
         started = await self._ensure_service_started()
         if not started:
-            return {"summary": "UNAVAILABLE: 插件服务起不来。"}
+            return _tool_error("UNAVAILABLE", "插件服务起不来。")
         try:
             seconds_value = float(seconds) if seconds not in (None, "") else 0.0
         except (TypeError, ValueError):
@@ -584,7 +606,7 @@ class SourcePlayerPlugin(NekoPluginBase):
     async def source_sequence_tool(self, *, actions: Any = None, **_):
         started = await self._ensure_service_started()
         if not started:
-            return {"summary": "UNAVAILABLE: 插件服务起不来。"}
+            return _tool_error("UNAVAILABLE", "插件服务起不来。")
         return await self._service.run_sequence(actions)
 
     @llm_tool(name="source_stop", description=STOP_DESCRIPTION,
@@ -592,7 +614,7 @@ class SourcePlayerPlugin(NekoPluginBase):
     async def source_stop_tool(self, **_):
         started = await self._ensure_service_started()
         if not started:
-            return {"summary": "UNAVAILABLE: 插件服务起不来。"}
+            return _tool_error("UNAVAILABLE", "插件服务起不来。")
         if self._service._game is None:  # noqa: SLF001 - cheap state check
             return {"summary": "现在还没有在玩；不用停。"}
         status = self._service.stop_playing(reason="tool")
@@ -603,7 +625,7 @@ class SourcePlayerPlugin(NekoPluginBase):
     async def source_resume_tool(self, **_):
         started = await self._ensure_service_started()
         if not started:
-            return {"summary": "UNAVAILABLE: 插件服务起不来。"}
+            return _tool_error("UNAVAILABLE", "插件服务起不来。")
         result = self._service.resume_playing(reason="tool")
         return result
 
@@ -614,7 +636,8 @@ class SourcePlayerPlugin(NekoPluginBase):
             status = self._service.get_status()
             return status
         except Exception as exc:
-            return {"summary": f"{type(exc).__name__}: {exc}"}
+            self.logger.exception("[status] failed")
+            return _tool_error("INTERNAL", type(exc).__name__)
 
     @llm_tool(name="source_games", description=GAMES_DESCRIPTION,
               parameters=GAMES_SCHEMA, timeout=20.0)
@@ -648,7 +671,7 @@ class SourcePlayerPlugin(NekoPluginBase):
     async def source_selfcheck_tool(self, **_):
         started = await self._ensure_service_started()
         if not started:
-            return {"summary": "UNAVAILABLE: 插件服务起不来。"}
+            return _tool_error("UNAVAILABLE", "插件服务起不来。")
         checks = await self._service.selfcheck()
         problems = checks.get("problems") or []
         summary = "自检通过。" if not problems else ("自检发现问题：" + "；".join(problems[:4]))
@@ -673,9 +696,7 @@ class SourcePlayerPlugin(NekoPluginBase):
     )
     async def source_play_entry(self, *, game: Any = None, objective: Any = "", **_):
         result = await self.source_play_tool(game=game, objective=objective)
-        if isinstance(result, dict) and result.get("summary"):
-            return Ok(result)
-        return Err(SdkError(str(result)))
+        return _ok_or_err(result)
 
     @ui.action(id="source_stop", label="让猫娘停手", icon="stop",
                tone="danger", order=20)
@@ -691,7 +712,7 @@ class SourcePlayerPlugin(NekoPluginBase):
     )
     async def source_stop_entry(self, **_):
         result = await self.source_stop_tool()
-        return Ok(result)
+        return _ok_or_err(result)
 
     @plugin_entry(
         id="source_resume",
@@ -705,7 +726,7 @@ class SourcePlayerPlugin(NekoPluginBase):
     )
     async def source_resume_entry(self, **_):
         result = await self.source_resume_tool()
-        return Ok(result)
+        return _ok_or_err(result)
 
     @ui.action(id="source_status", label="刷新状态", icon="refresh", order=30)
     @plugin_entry(
@@ -720,7 +741,7 @@ class SourcePlayerPlugin(NekoPluginBase):
     )
     async def source_status_entry(self, **_):
         status = await self.source_status_tool()
-        return Ok(status)
+        return _ok_or_err(status)
 
     @plugin_entry(
         id="source_look",
@@ -734,7 +755,7 @@ class SourcePlayerPlugin(NekoPluginBase):
     )
     async def source_look_entry(self, *, note: Any = "", **_):
         result = await self.source_look_tool(note=note)
-        return Ok(result)
+        return _ok_or_err(result)
 
     @plugin_entry(
         id="source_selfcheck",
@@ -748,4 +769,4 @@ class SourcePlayerPlugin(NekoPluginBase):
     )
     async def source_selfcheck_entry(self, **_):
         result = await self.source_selfcheck_tool()
-        return Ok(result)
+        return _ok_or_err(result)
