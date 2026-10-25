@@ -378,7 +378,13 @@ def client_rect_on_screen(hwnd: int) -> tuple[int, int, int, int]:
     return (left, top, left + int(rect.right - rect.left), top + int(rect.bottom - rect.top))
 
 
-WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+# ctypes.WINFUNCTYPE only exists on Windows; keep the module importable on the
+# Linux CI runner, where find_windows_for_pids returns early anyway.
+WNDENUMPROC = (
+    ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    if _IS_WINDOWS
+    else None
+)
 
 
 def find_windows_for_pids(pids: Iterable[int]) -> list[WindowInfo]:
